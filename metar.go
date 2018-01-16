@@ -12,7 +12,7 @@ var parserStrings map[string]string = map[string]string{"type": `^(?P<type>METAR
 	"time":       `^(?P<day>\d\d)(?P<hour>\d\d)(?P<min>\d\d)Z?\s+`,
 	"modifier":   `^(?P<mod>AUTO|FINO|NIL|TEST|CORR?|RTD|CC[A-G])\s+`,
 	"wind":       `^(?P<dir>\d{3}|0|///|MMM|VRB)(?P<speed>P?[\dO]{2,3}|[/M]{2,3})(?P<gust>G(\d{1,3}|[/M]{1,3}))?(?P<units>KT|KMH|MPS)?(\s+(?P<varfrom>\d\d\d)V(?P<varto>\d\d\d))?\s+`,
-	"visibility": `(?P<vis>(?P<dist>(M|P)?\d\d\d\d)(?P<dir>[NSEW][EW]?|NDV)?|(?P<distu>(M|P)?(\d+))(?P<units>SM|KM|M|U)?|CAVOK)\s+`,
+	"visibility": `(?P<vis>(?P<dist>(M|P)?\d\d\d\d)(?P<dir>[NSEW][EW]?|NDV)?|(?P<distu>(M|P)?(\d+))(?P<units>SM|KM|M|U)?|(?P<cavok>CAVOK))\s+`,
 	"runway":     `^(RVRNO | R(?P<name>\d\d(RR?|LL?|C)?)/(?P<low>(M|P)?\d\d\d\d)(V(?P<high>(M|P)?\d\d\d\d))?(?P<unit>FT)?[/NDU]*)\s+`,
 	"weather":    `(?P<int>(-|\+|VC)+)?(?P<desc>(MI|PR|BC|DR|BL|SH|TS|FZ)+)?(:?(?P<prec>(DZ|RA|SN|SG|IC|PL|GR|GS|UP)+)(?P<obsc>BR|FG|FU|VA|DU|SA|HZ|PY)?(?P<other>PO|SQ|FC|SS|DS)?|(?P<obsc>BR|FG|FU|VA|DU|SA|HZ|PY)(?P<other>PO|SQ|FC|SS|DS)?|(?P<other>PO|SQ|FC|SS|DS))+\s+`,
 	"sky":        `(?P<cover>VV|CLR|SKC|SCK|NSC|NCD|BKN|SCT|FEW|OVC)(?P<height>\d{2,4})?(?P<cloud>([A-Z][A-Z]+))?\s+`,
@@ -150,14 +150,21 @@ func (m *Metar) Parse(rawMetar string, t time.Time) error {
 	rawMetar = rawMetar[idx[1]:]
 
 	idx = parsers["visibility"].FindStringSubmatchIndex(rawMetar)
-	if idx == nil || idx[4] == -1 || idx[5] == -1 {
+	if idx == nil {
 		return fmt.Errorf("Error parsing metar visibility")
 	}
 
-	if vis, err := strconv.Atoi(rawMetar[idx[4]:idx[5]]); err == nil {
-		m.Visibility = vis
+	// Find a better way of signaling CAVOK
+	if idx[18] != -1 || idx[19] != -1 {
+		m.Visibility = 9999
+	} else if idx[4] != -1 || idx[5] != -1 {
+		if vis, err := strconv.Atoi(rawMetar[idx[4]:idx[5]]); err == nil {
+			m.Visibility = vis
+		} else {
+			return fmt.Errorf("Error converting visibility value in metar")
+		}
 	} else {
-		return fmt.Errorf("Error converting visibility value in metar")
+		return fmt.Errorf("Error interpreting metar visibility")
 	}
 	rawMetar = rawMetar[idx[1]:]
 
@@ -183,28 +190,27 @@ func (m *Metar) Parse(rawMetar string, t time.Time) error {
 	}
 
 	idxs = parsers["sky"].FindAllStringSubmatchIndex(rawMetar, -1)
-	if idxs == nil {
-		return fmt.Errorf("Error parsing metar sky")
-	}
-	for _, idx = range idxs {
-		sky := Sky{}
-		if idx[2] != -1 && idx[3] != -1 {
-			sky.Cover = rawMetar[idx[2]:idx[3]]
-		}
-		if idx[4] != -1 && idx[5] != -1 {
-			if height, err := strconv.Atoi(rawMetar[idx[4]:idx[5]]); err == nil {
-				sky.Height = height
-			} else {
-				return fmt.Errorf("Error converting cloud height value in metar")
+	if idxs != nil {
+		for _, idx = range idxs {
+			sky := Sky{}
+			if idx[2] != -1 && idx[3] != -1 {
+				sky.Cover = rawMetar[idx[2]:idx[3]]
 			}
+			if idx[4] != -1 && idx[5] != -1 {
+				if height, err := strconv.Atoi(rawMetar[idx[4]:idx[5]]); err == nil {
+					sky.Height = height
+				} else {
+					return fmt.Errorf("Error converting cloud height value in metar")
+				}
 
+			}
+			if idx[6] != -1 && idx[7] != -1 {
+				sky.Cloud = rawMetar[idx[6]:idx[7]]
+			}
+			m.Sky = append(m.Sky, sky)
 		}
-		if idx[6] != -1 && idx[7] != -1 {
-			sky.Cloud = rawMetar[idx[6]:idx[7]]
-		}
-		m.Sky = append(m.Sky, sky)
+		rawMetar = rawMetar[idx[1]:]
 	}
-	rawMetar = rawMetar[idx[1]:]
 
 	idx = parsers["temp"].FindStringSubmatchIndex(rawMetar)
 	if idx == nil {
