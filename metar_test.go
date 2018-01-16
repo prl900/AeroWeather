@@ -2,6 +2,7 @@ package aeroweather_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prl900/aeroweather"
 )
@@ -14,7 +15,7 @@ func TestMetarParse(t *testing.T) {
 	m := &aeroweather.Metar{}
 
 	for _, metar := range metars {
-		if m.Parse(metar, "2018/01/16 10:00") != nil {
+		if m.Parse(metar, time.Now()) != nil {
 			t.Errorf("Could not parse: %s", metar)
 		}
 	}

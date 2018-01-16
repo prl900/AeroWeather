@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-const dateFormat = "2006/01/02 15:04"
-
 var parserStrings map[string]string = map[string]string{"type": `^(?P<type>METAR|SPECI)?\s+`,
 	"station":    `^(?P<station>[A-Z][A-Z0-9]{3})\s+`,
 	"time":       `^(?P<day>\d\d)(?P<hour>\d\d)(?P<min>\d\d)Z?\s+`,
@@ -56,7 +54,7 @@ type Metar struct {
 	Pressure   int
 }
 
-func (m *Metar) Parse(rawMetar, rawDate string) error {
+func (m *Metar) Parse(rawMetar string, t time.Time) error {
 	parsers := map[string]*regexp.Regexp{}
 	for key, value := range parserStrings {
 		parsers[key] = regexp.MustCompile(value)
@@ -80,12 +78,8 @@ func (m *Metar) Parse(rawMetar, rawDate string) error {
 		return fmt.Errorf("Error parsing metar time")
 	}
 
-	t, err := time.Parse(dateFormat, rawDate)
-	if err != nil {
-		return fmt.Errorf("Error parsing message time")
-	}
-
 	var day, hour, min int
+	var err error
 	if day, err = strconv.Atoi(rawMetar[idx[2]:idx[3]]); err != nil {
 		return fmt.Errorf("Error converting day in metar")
 	}
